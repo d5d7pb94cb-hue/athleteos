@@ -410,7 +410,7 @@ export default function App() {
         <div style={{ marginBottom: 20 }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: "#555b78", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 10 }}>Profile</div>
           <div style={S.card}>
-            <input style={S.formInput} defaultValue="Arjun R." placeholder="Full name" />
+            <input style={S.formInput} defaultValue="Aryam Jain" placeholder="Full name" />
             <input style={S.formInput} defaultValue="Student · Footballer" placeholder="Role" />
             <button style={S.btnSm(false)}>Save Profile</button>
           </div>
@@ -479,7 +479,7 @@ export default function App() {
         </nav>
         <div style={S.profile}>
           <div style={S.avatar}>AR</div>
-          <div><p style={{ fontSize: 13, fontWeight: 500, margin: 0 }}>Arjun R.</p><span style={{ fontSize: 11, color: "#555b78" }}>Student · Footballer</span></div>
+          <div><p style={{ fontSize: 13, fontWeight: 500, margin: 0 }}>Aryam Jain</p><span style={{ fontSize: 11, color: "#555b78" }}>Student · Footballer</span></div>
         </div>
       </div>
       {/* Main */}
