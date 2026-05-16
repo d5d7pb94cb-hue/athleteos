@@ -49,8 +49,8 @@ const S = {
   modalBackdrop: { position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" },
   modal: { background: "#151820", border: "1px solid #2e3450", borderRadius: 16, width: 420, maxWidth: "92vw", overflow: "hidden" },
   modalHeader: { padding: "16px 20px", borderBottom: "1px solid #252a3d", display: "flex", alignItems: "center", justifyContent: "space-between" },
-  modalTabs: { display: "flex", borderBottom: "1px solid #252a3d", overflowX: "auto" },
-  modalTab: (active) => ({ flex: 1, padding: 10, textAlign: "center", fontSize: 13, fontWeight: 500, color: active ? "#4f8ef7" : "#555b78", cursor: "pointer", borderBottom: active ? "2px solid #4f8ef7" : "2px solid transparent", whiteSpace: "nowrap" }),
+  modalTabs: { display: "flex", borderBottom: "1px solid #252a3d" },
+  modalTab: (active) => ({ flex: 1, padding: 10, textAlign: "center", fontSize: 13, fontWeight: 500, color: active ? "#4f8ef7" : "#555b78", cursor: "pointer", borderBottom: active ? "2px solid #4f8ef7" : "2px solid transparent" }),
   modalBody: { padding: 20 },
   modalField: { marginBottom: 14 },
   modalInput: { width: "100%", background: "#1c2030", border: "1px solid #252a3d", borderRadius: 8, padding: "8px 12px", color: "#e8eaf0", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" },
@@ -67,9 +67,18 @@ const S = {
 
 const DAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-const WEEK = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
 const COLS = [{ key: "todo", label: "To Do" }, { key: "inprogress", label: "In Progress" }, { key: "done", label: "Done" }];
 const COLORS = ["#4f8ef7","#27c98f","#f5a623","#7c5cbf","#e85d5d"];
+
+// Isolated text input components to prevent re-render issues
+function TextInput({ value, onSave, placeholder, style, multiline }) {
+  const [local, setLocal] = useState(value);
+  useEffect(() => { setLocal(value); }, [value]);
+  if (multiline) {
+    return <textarea style={style} value={local} onChange={e => setLocal(e.target.value)} onBlur={() => onSave(local)} placeholder={placeholder} />;
+  }
+  return <input style={style} value={local} onChange={e => setLocal(e.target.value)} onBlur={() => onSave(local)} onKeyDown={e => e.key === "Enter" && onSave(local)} placeholder={placeholder} />;
+}
 
 export default function App() {
   const d = new Date();
@@ -80,61 +89,76 @@ export default function App() {
   const [schedule, setSchedule] = useState([]);
   const [notes, setNotes] = useState("");
   const [notesId, setNotesId] = useState(null);
-  const [profileName, setProfileName] = useState("Arjun R.");
-  const [profileRole, setProfileRole] = useState("Student · Footballer");
+  const [perfNotes, setPerfNotes] = useState("");
+  const [perfNotesId, setPerfNotesId] = useState(null);
+  const [profileName, setProfileName] = useState("Your Name");
+  const [profileRole, setProfileRole] = useState("Student · Athlete");
+  const [profileId, setProfileId] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [modal, setModal] = useState({ open: false, tab: "task" });
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalTab, setModalTab] = useState("task");
   const [viewMode, setViewMode] = useState("kanban");
-  const [mTitle, setMTitle] = useState("");
-  const [mSubject, setMSubject] = useState("");
-  const [mDeadline, setMDeadline] = useState("");
-  const [mNotes, setMNotes] = useState("");
-  const [mHabit, setMHabit] = useState("");
-  const [mType, setMType] = useState("Football");
-  const [mDur, setMDur] = useState("");
-  const [mIntensity, setMIntensity] = useState("High");
-  const [mSchedTime, setMSchedTime] = useState("");
-  const [mSchedLabel, setMSchedLabel] = useState("");
-  const [newHabit, setNewHabit] = useState("");
   const [drag, setDrag] = useState(null);
-  const notesTimer = useRef(null);
-  const notesIdRef = useRef(null);
 
   useEffect(() => {
     async function loadData() {
       setLoading(true);
-      const [{ data: h }, { data: t }, { data: tl }, { data: sc }, { data: n }] = await Promise.all([
+      const [{ data: h }, { data: t }, { data: tl }, { data: sc }, { data: n }, { data: pn }, { data: pr }] = await Promise.all([
         supabase.from("habits").select("*").order("created_at"),
         supabase.from("tasks").select("*").order("created_at"),
         supabase.from("training_logs").select("*").order("created_at", { ascending: false }),
         supabase.from("schedule").select("*").order("time"),
         supabase.from("Notes").select("*").limit(1),
+        supabase.from("performance_notes").select("*").limit(1),
+        supabase.from("profile").select("*").limit(1),
       ]);
       if (h) setHabits(h);
       if (t) setTasks(t);
       if (tl) setTrainingLogs(tl);
       if (sc) setSchedule(sc);
-      if (n && n.length > 0) { setNotes(n[0].content); setNotesId(n[0].id); notesIdRef.current = n[0].id; }
+      if (n && n.length > 0) { setNotes(n[0].content); setNotesId(n[0].id); }
+      if (pn && pn.length > 0) { setPerfNotes(pn[0].content); setPerfNotesId(pn[0].id); }
+      if (pr && pr.length > 0) { setProfileName(pr[0].name); setProfileRole(pr[0].role); setProfileId(pr[0].id); }
       setLoading(false);
     }
     loadData();
   }, []);
 
-  // Save notes with debounce - waits 1 second after typing stops
   async function saveNotes(value) {
     setNotes(value);
-    const { data: existing } = await supabase.from("Notes").select("id").limit(1);
-    if (existing && existing.length > 0) {
-      await supabase.from("Notes").update({ content: value }).eq("id", existing[0].id);
+    if (notesId) {
+      await supabase.from("Notes").update({ content: value }).eq("id", notesId);
     } else {
-      await supabase.from("Notes").insert([{ content: value }]);
+      const { data } = await supabase.from("Notes").insert([{ content: value }]).select();
+      if (data && data[0]) setNotesId(data[0].id);
+    }
+  }
+
+  async function savePerfNotes(value) {
+    setPerfNotes(value);
+    if (perfNotesId) {
+      await supabase.from("performance_notes").update({ content: value }).eq("id", perfNotesId);
+    } else {
+      const { data } = await supabase.from("performance_notes").insert([{ content: value }]).select();
+      if (data && data[0]) setPerfNotesId(data[0].id);
+    }
+  }
+
+  async function saveProfile(name, role) {
+    setProfileName(name);
+    setProfileRole(role);
+    if (profileId) {
+      await supabase.from("profile").update({ name, role }).eq("id", profileId);
+    } else {
+      const { data } = await supabase.from("profile").insert([{ name, role }]).select();
+      if (data && data[0]) setProfileId(data[0].id);
     }
   }
 
   async function addHabit(name) {
     if (!name.trim()) return;
     const color = COLORS[habits.length % COLORS.length];
-    const { data } = await supabase.from("habits").insert([{ name: name.trim(), color, done: false }]).select();
+    const { data } = await supabase.from("habits").insert([{ name: name.trim(), color, Done: false }]).select();
     if (data) setHabits(prev => [...prev, data[0]]);
   }
 
@@ -145,13 +169,13 @@ export default function App() {
 
   async function toggleHabit(id, currentDone) {
     const done = !currentDone;
-    await supabase.from("habits").update({ done }).eq("id", id);
-    setHabits(prev => prev.map(h => h.id === id ? { ...h, done } : h));
+    await supabase.from("habits").update({ Done: done }).eq("id", id);
+    setHabits(prev => prev.map(h => h.id === id ? { ...h, Done: done } : h));
   }
 
   async function addTask(title, subject, deadline, notes) {
     if (!title.trim()) return;
-    const { data } = await supabase.from("tasks").insert([{ title, subject, deadline: deadline || "TBD", notes, status: "todo", urgent: false }]).select();
+    const { data } = await supabase.from("tasks").insert([{ title: title.trim(), subject, deadline: deadline || "TBD", notes, status: "todo", urgent: false }]).select();
     if (data) setTasks(prev => [...prev, data[0]]);
   }
 
@@ -187,18 +211,8 @@ export default function App() {
     setSchedule(prev => prev.filter(s => s.id !== id));
   }
 
-  async function saveModal() {
-    if (modal.tab === "task") await addTask(mTitle, mSubject, mDeadline, mNotes);
-    else if (modal.tab === "habit") await addHabit(mHabit);
-    else if (modal.tab === "training") await addTraining(mType, mDur, mIntensity, mNotes);
-    else if (modal.tab === "schedule") await addSchedule(mSchedTime, mSchedLabel);
-    setModal({ open: false, tab: "task" });
-    setMTitle(""); setMSubject(""); setMDeadline(""); setMNotes("");
-    setMHabit(""); setMDur(""); setMSchedTime(""); setMSchedLabel("");
-  }
-
   const todayStr = d.getDate() + " " + MONTHS[d.getMonth()].slice(0, 3);
-  const todayTasks = tasks.filter(t => t.deadline === "Today" || t.deadline === todayStr);
+  const todayTasks = tasks.filter(t => t.deadline === "Today" || t.deadline === "today" || t.deadline === todayStr);
   const todayTraining = trainingLogs[0];
   const initials = profileName.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
 
@@ -211,16 +225,68 @@ export default function App() {
     ["settings", "⚙️", "Settings"],
   ];
 
-  function NotesBox({ notes, saveNotes }) {
-    const [local, setLocal] = useState(notes);
+  // Modal form - completely isolated
+  function QuickAddModal() {
+    const [tab, setTab] = useState(modalTab);
+    const [title, setTitle] = useState("");
+    const [subject, setSubject] = useState("");
+    const [deadline, setDeadline] = useState("");
+    const [taskNotes, setTaskNotes] = useState("");
+    const [habit, setHabit] = useState("");
+    const [type, setType] = useState("Football");
+    const [dur, setDur] = useState("");
+    const [intensity, setIntensity] = useState("High");
+    const [trainNotes, setTrainNotes] = useState("");
+    const [schedTime, setSchedTime] = useState("");
+    const [schedLabel, setSchedLabel] = useState("");
+
+    async function handleSave() {
+      if (tab === "task") await addTask(title, subject, deadline, taskNotes);
+      else if (tab === "habit") await addHabit(habit);
+      else if (tab === "training") await addTraining(type, dur, intensity, trainNotes);
+      else if (tab === "schedule") await addSchedule(schedTime, schedLabel);
+      setModalOpen(false);
+    }
+
     return (
-      <textarea
-        style={S.textarea}
-        value={local}
-        onChange={e => setLocal(e.target.value)}
-        onBlur={e => saveNotes(e.target.value)}
-        placeholder="Jot down reminders, thoughts..."
-      />
+      <div style={S.modalBackdrop} onClick={e => e.target === e.currentTarget && setModalOpen(false)}>
+        <div style={S.modal}>
+          <div style={S.modalHeader}>
+            <h2 style={{ fontSize: 16, fontWeight: 600, margin: 0, fontFamily: "'Space Grotesk',sans-serif" }}>Quick Add</h2>
+            <button onClick={() => setModalOpen(false)} style={{ background: "none", border: "none", color: "#555b78", fontSize: 20, cursor: "pointer" }}>✕</button>
+          </div>
+          <div style={S.modalTabs}>
+            {["task", "habit", "training", "schedule"].map(t => (
+              <div key={t} style={S.modalTab(tab === t)} onClick={() => setTab(t)}>
+                {t.charAt(0).toUpperCase() + t.slice(1)}
+              </div>
+            ))}
+          </div>
+          <div style={S.modalBody}>
+            {tab === "task" && <>
+              <div style={S.modalField}><label style={{ fontSize: 12, color: "#555b78", display: "block", marginBottom: 5 }}>Title</label><input style={S.modalInput} value={title} onChange={e => setTitle(e.target.value)} placeholder="Task title" /></div>
+              <div style={S.modalField}><label style={{ fontSize: 12, color: "#555b78", display: "block", marginBottom: 5 }}>Subject</label><input style={S.modalInput} value={subject} onChange={e => setSubject(e.target.value)} placeholder="Physics, Math..." /></div>
+              <div style={S.modalField}><label style={{ fontSize: 12, color: "#555b78", display: "block", marginBottom: 5 }}>Deadline</label><input style={S.modalInput} value={deadline} onChange={e => setDeadline(e.target.value)} placeholder='Type "Today" or "16 May"' /></div>
+              <div style={S.modalField}><label style={{ fontSize: 12, color: "#555b78", display: "block", marginBottom: 5 }}>Notes</label><input style={S.modalInput} value={taskNotes} onChange={e => setTaskNotes(e.target.value)} placeholder="Optional notes" /></div>
+            </>}
+            {tab === "habit" && <div style={S.modalField}><label style={{ fontSize: 12, color: "#555b78", display: "block", marginBottom: 5 }}>Habit Name</label><input style={S.modalInput} value={habit} onChange={e => setHabit(e.target.value)} placeholder="e.g. Read 30 mins" /></div>}
+            {tab === "training" && <>
+              <div style={S.modalField}><label style={{ fontSize: 12, color: "#555b78", display: "block", marginBottom: 5 }}>Type</label><select style={S.modalInput} value={type} onChange={e => setType(e.target.value)}><option>Football</option><option>Gym</option><option>Run</option><option>Other</option></select></div>
+              <div style={S.modalField}><label style={{ fontSize: 12, color: "#555b78", display: "block", marginBottom: 5 }}>Duration (mins)</label><input type="number" style={S.modalInput} value={dur} onChange={e => setDur(e.target.value)} placeholder="60" /></div>
+              <div style={S.modalField}><label style={{ fontSize: 12, color: "#555b78", display: "block", marginBottom: 5 }}>Intensity</label><select style={S.modalInput} value={intensity} onChange={e => setIntensity(e.target.value)}><option>Low</option><option>Medium</option><option>High</option></select></div>
+              <div style={S.modalField}><label style={{ fontSize: 12, color: "#555b78", display: "block", marginBottom: 5 }}>Notes</label><textarea style={{ ...S.modalInput, minHeight: 60, resize: "none" }} value={trainNotes} onChange={e => setTrainNotes(e.target.value)} placeholder="Session notes..." /></div>
+            </>}
+            {tab === "schedule" && <>
+              <div style={S.modalField}><label style={{ fontSize: 12, color: "#555b78", display: "block", marginBottom: 5 }}>Time (e.g. 9:00)</label><input style={S.modalInput} value={schedTime} onChange={e => setSchedTime(e.target.value)} placeholder="9:00" /></div>
+              <div style={S.modalField}><label style={{ fontSize: 12, color: "#555b78", display: "block", marginBottom: 5 }}>Event</label><input style={S.modalInput} value={schedLabel} onChange={e => setSchedLabel(e.target.value)} placeholder="e.g. Football Training" /></div>
+            </>}
+          </div>
+          <div style={S.modalFooter}>
+            <button style={S.btnSm(true)} onClick={() => setModalOpen(false)}>Cancel</button>
+            <button style={S.btnSm(false)} onClick={handleSave}>Save</button>
+          </div>
+        </div>
+      </div>
     );
   }
 
@@ -232,11 +298,11 @@ export default function App() {
           <div style={S.card}>
             <div style={{ ...S.cardTitle, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span>Today's Schedule</span>
-              <button onClick={() => setModal({ open: true, tab: "schedule" })} style={{ background: "#1c2030", border: "1px solid #252a3d", borderRadius: 6, padding: "2px 8px", color: "#8b90a8", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>+ Add</button>
+              <button onClick={() => { setModalTab("schedule"); setModalOpen(true); }} style={{ background: "#1c2030", border: "1px solid #252a3d", borderRadius: 6, padding: "2px 8px", color: "#8b90a8", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>+ Add</button>
             </div>
             {schedule.length === 0 && <p style={{ fontSize: 13, color: "#555b78" }}>No schedule yet. Click + Add!</p>}
             {schedule.map((s, i) => (
-              <div key={s.id || i} style={{ ...S.schedItem, ...(i === schedule.length - 1 ? { borderBottom: "none" } : {}) }}>
+              <div key={s.id} style={{ ...S.schedItem, ...(i === schedule.length - 1 ? { borderBottom: "none" } : {}) }}>
                 <span style={{ fontSize: 12, color: "#555b78", minWidth: 44, fontWeight: 500 }}>{s.time}</span>
                 <div style={S.dot} />
                 <span style={{ fontSize: 14, flex: 1 }}>{s.label}</span>
@@ -267,30 +333,28 @@ export default function App() {
             {habits.length === 0 && <p style={{ fontSize: 13, color: "#555b78" }}>No habits yet. Add one!</p>}
             {habits.map((h, i) => (
               <div key={h.id} style={{ ...S.habitItem, ...(i === habits.length - 1 ? { borderBottom: "none" } : {}) }}>
-                <div style={S.habitToggle(h.done)} onClick={() => toggleHabit(h.id, h.done)}>
-                  {h.done && <span style={{ fontSize: 12, color: "#fff" }}>✓</span>}
+                <div style={S.habitToggle(h.Done)} onClick={() => toggleHabit(h.id, h.done)}>
+                  {h.Done && <span style={{ fontSize: 12, color: "#fff" }}>✓</span>}
                 </div>
-                <span style={{ fontSize: 14, flex: 1, textDecoration: h.done ? "line-through" : "none", color: h.done ? "#555b78" : "#e8eaf0" }}>{h.name}</span>
-                <span style={S.tag(h.done ? "green" : "today")}>{h.done ? "Done" : "Pending"}</span>
+                <span style={{ fontSize: 14, flex: 1, textDecoration: h.Done ? "line-through" : "none", color: h.Done ? "#555b78" : "#e8eaf0" }}>{h.name}</span>
+                <span style={S.tag(h.Done ? "green" : "today")}>{h.Done ? "Done" : "Pending"}</span>
               </div>
             ))}
           </div>
 
           <div style={S.card}>
             <div style={S.cardTitle}>Training · Today</div>
-            {todayTraining ? (
-              <>
-                <div style={S.trainingType}>⚽ {todayTraining.type}</div>
-                <div style={S.trainingRow}><span>Duration</span><span style={{ color: "#e8eaf0", fontWeight: 500 }}>{todayTraining.duration}</span></div>
-                <div style={S.trainingRow}><span>Intensity</span><span style={S.intensityBadge(todayTraining.intensity)}>{todayTraining.intensity}</span></div>
-                <div style={{ ...S.trainingRow, borderBottom: "none" }}><span>Note</span><span style={{ color: "#e8eaf0", fontSize: 12 }}>{todayTraining.note}</span></div>
-              </>
-            ) : <p style={{ fontSize: 13, color: "#555b78" }}>No training today. Use Quick Add!</p>}
+            {todayTraining ? <>
+              <div style={S.trainingType}>⚽ {todayTraining.type}</div>
+              <div style={S.trainingRow}><span>Duration</span><span style={{ color: "#e8eaf0", fontWeight: 500 }}>{todayTraining.duration}</span></div>
+              <div style={S.trainingRow}><span>Intensity</span><span style={S.intensityBadge(todayTraining.intensity)}>{todayTraining.intensity}</span></div>
+              <div style={{ ...S.trainingRow, borderBottom: "none" }}><span>Note</span><span style={{ color: "#e8eaf0", fontSize: 12 }}>{todayTraining.note}</span></div>
+            </> : <p style={{ fontSize: 13, color: "#555b78" }}>No training today. Use Quick Add!</p>}
           </div>
 
           <div style={{ ...S.card, gridColumn: "1/-1" }}>
             <div style={S.cardTitle}>Notes & Reminders</div>
-            <NotesBox notes={notes} saveNotes={saveNotes} />
+            <TextInput multiline value={notes} onSave={saveNotes} placeholder="Jot down reminders, thoughts..." style={S.textarea} />
           </div>
         </div>
       </div>
@@ -298,6 +362,7 @@ export default function App() {
   }
 
   function Habits() {
+    const [newHabitText, setNewHabitText] = useState("");
     return (
       <div>
         <div style={S.pageTitle}>Habits</div>
@@ -313,19 +378,25 @@ export default function App() {
               </div>
             ))}
             <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-              <input value={newHabit} onChange={e => setNewHabit(e.target.value)} placeholder="New habit..." style={{ ...S.formInput, marginBottom: 0, flex: 1 }} onKeyDown={e => { if (e.key === "Enter") { addHabit(newHabit); setNewHabit(""); } }} />
-              <button style={S.btnSm(false)} onClick={() => { addHabit(newHabit); setNewHabit(""); }}>Add</button>
+              <input
+                value={newHabitText}
+                onChange={e => setNewHabitText(e.target.value)}
+                placeholder="New habit name..."
+                style={{ ...S.formInput, marginBottom: 0, flex: 1 }}
+                onKeyDown={e => { if (e.key === "Enter" && newHabitText.trim()) { addHabit(newHabitText); setNewHabitText(""); } }}
+              />
+              <button style={S.btnSm(false)} onClick={() => { if (newHabitText.trim()) { addHabit(newHabitText); setNewHabitText(""); } }}>Add</button>
             </div>
           </div>
           <div style={S.card}>
             <div style={S.cardTitle}>Habit Status Today</div>
             {habits.map(h => (
               <div key={h.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: "1px solid #252a3d", fontSize: 13 }}>
-                <div style={S.habitToggle(h.done)} onClick={() => toggleHabit(h.id, h.done)}>
-                  {h.done && <span style={{ fontSize: 12, color: "#fff" }}>✓</span>}
+                <div style={S.habitToggle(h.Done)} onClick={() => toggleHabit(h.id, h.done)}>
+                  {h.Done && <span style={{ fontSize: 12, color: "#fff" }}>✓</span>}
                 </div>
                 <span style={{ flex: 1 }}>{h.name}</span>
-                <span style={S.tag(h.done ? "green" : "today")}>{h.done ? "Done" : "Pending"}</span>
+                <span style={S.tag(h.Done ? "green" : "today")}>{h.Done ? "Done" : "Pending"}</span>
               </div>
             ))}
           </div>
@@ -364,9 +435,9 @@ export default function App() {
                 <div style={S.kanbanTasks}>
                   {byStatus(col.key).map(t => (
                     <div key={t.id} style={S.taskCard} draggable onDragStart={() => setDrag(t.id)}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                        <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 4, flex: 1 }}>{t.title}</div>
-                        <button onClick={() => deleteTask(t.id)} style={{ background: "none", border: "none", color: "#555b78", cursor: "pointer", fontSize: 13, padding: 0 }}>🗑</button>
+                      <div style={{ display: "flex", justifyContent: "space-between" }}>
+                        <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>{t.title}</div>
+                        <button onClick={() => deleteTask(t.id)} style={{ background: "none", border: "none", color: "#555b78", cursor: "pointer", fontSize: 13 }}>🗑</button>
                       </div>
                       <div style={{ fontSize: 12, color: "#555b78", display: "flex", gap: 8 }}>
                         {t.subject && <span>{t.subject}</span>}
@@ -375,25 +446,23 @@ export default function App() {
                     </div>
                   ))}
                 </div>
-                <button style={S.addTaskBtn} onClick={() => setModal({ open: true, tab: "task" })}>+ Add task</button>
+                <button style={S.addTaskBtn} onClick={() => { setModalTab("task"); setModalOpen(true); }}>+ Add task</button>
               </div>
             ))}
           </div>
         ) : (
-          <div>
-            {tasks.map(t => {
-              const col = COLS.find(c => c.key === t.status);
-              return (
-                <div key={t.id} style={S.listItem}>
-                  <span style={S.statusBadge(t.status)}>{col.label}</span>
-                  <span style={{ flex: 1, fontSize: 14 }}>{t.title}</span>
-                  {t.subject && <span style={{ fontSize: 12, color: "#555b78" }}>{t.subject}</span>}
-                  <span style={{ fontSize: 12, color: "#555b78", marginLeft: 8 }}>📅 {t.deadline}</span>
-                  <button onClick={() => deleteTask(t.id)} style={{ background: "none", border: "none", color: "#555b78", cursor: "pointer", fontSize: 14, marginLeft: 8 }}>🗑</button>
-                </div>
-              );
-            })}
-          </div>
+          <div>{tasks.map(t => {
+            const col = COLS.find(c => c.key === t.status);
+            return (
+              <div key={t.id} style={S.listItem}>
+                <span style={S.statusBadge(t.status)}>{col.label}</span>
+                <span style={{ flex: 1, fontSize: 14 }}>{t.title}</span>
+                {t.subject && <span style={{ fontSize: 12, color: "#555b78" }}>{t.subject}</span>}
+                <span style={{ fontSize: 12, color: "#555b78", marginLeft: 8 }}>📅 {t.deadline}</span>
+                <button onClick={() => deleteTask(t.id)} style={{ background: "none", border: "none", color: "#555b78", cursor: "pointer", fontSize: 14, marginLeft: 8 }}>🗑</button>
+              </div>
+            );
+          })}</div>
         )}
       </div>
     );
@@ -406,14 +475,12 @@ export default function App() {
         <div style={{ ...S.grid2, marginBottom: 14 }}>
           <div style={S.card}>
             <div style={S.cardTitle}>Today's Training</div>
-            {todayTraining ? (
-              <>
-                <div style={S.trainingType}>⚽ {todayTraining.type}</div>
-                <div style={S.trainingRow}><span>Duration</span><span style={{ color: "#e8eaf0", fontWeight: 500 }}>{todayTraining.duration}</span></div>
-                <div style={S.trainingRow}><span>Intensity</span><span style={S.intensityBadge(todayTraining.intensity)}>{todayTraining.intensity}</span></div>
-                <div style={{ ...S.trainingRow, borderBottom: "none" }}><span>Note</span><span style={{ color: "#e8eaf0", fontSize: 12 }}>{todayTraining.note}</span></div>
-              </>
-            ) : <p style={{ fontSize: 13, color: "#555b78" }}>No training today. Use Quick Add!</p>}
+            {todayTraining ? <>
+              <div style={S.trainingType}>⚽ {todayTraining.type}</div>
+              <div style={S.trainingRow}><span>Duration</span><span style={{ color: "#e8eaf0", fontWeight: 500 }}>{todayTraining.duration}</span></div>
+              <div style={S.trainingRow}><span>Intensity</span><span style={S.intensityBadge(todayTraining.intensity)}>{todayTraining.intensity}</span></div>
+              <div style={{ ...S.trainingRow, borderBottom: "none" }}><span>Note</span><span style={{ color: "#e8eaf0", fontSize: 12 }}>{todayTraining.note}</span></div>
+            </> : <p style={{ fontSize: 13, color: "#555b78" }}>No training today. Use Quick Add!</p>}
           </div>
           <div style={S.card}>
             <div style={S.cardTitle}>Past Training Logs</div>
@@ -432,7 +499,7 @@ export default function App() {
         </div>
         <div style={{ ...S.card, marginBottom: 14 }}>
           <div style={S.cardTitle}>Performance Notes</div>
-          <textarea style={{ ...S.textarea, minHeight: 90 }} placeholder="Match notes, weaknesses, improvements..." />
+          <TextInput multiline value={perfNotes} onSave={savePerfNotes} placeholder="Match notes, weaknesses, improvements..." style={{ ...S.textarea, minHeight: 90 }} />
         </div>
       </div>
     );
@@ -452,7 +519,7 @@ export default function App() {
               <div key={h.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: "1px solid #252a3d", fontSize: 13 }}>
                 <div style={{ width: 10, height: 10, borderRadius: 3, background: h.color || "#4f8ef7" }} />
                 <span style={{ flex: 1 }}>{h.name}</span>
-                <span style={S.tag(h.done ? "green" : "today")}>{h.done ? "Done today" : "Pending"}</span>
+                <span style={S.tag(h.Done ? "green" : "today")}>{h.Done ? "Done today" : "Pending"}</span>
               </div>
             ))}
           </div>
@@ -473,21 +540,24 @@ export default function App() {
             <div style={S.statBox}><div style={S.statNum("#f5a623")}>{trainingLogs.filter(l => l.type === "Football").length}</div><div style={{ fontSize: 12, color: "#555b78", marginTop: 2 }}>Football</div></div>
             <div style={S.statBox}><div style={S.statNum("#27c98f")}>{trainingLogs.filter(l => l.type === "Gym").length}</div><div style={{ fontSize: 12, color: "#555b78", marginTop: 2 }}>Gym</div></div>
           </div>
-          {trainingLogs.slice(0, 4).map((l, i) => (
-            <div key={i} style={{ display: "flex", gap: 10, padding: "7px 0", borderBottom: "1px solid #252a3d", fontSize: 13 }}>
-              <span style={{ color: "#555b78", minWidth: 60 }}>{l.date}</span>
-              <span style={{ flex: 1 }}>{l.type}</span>
-              <span style={{ color: "#8b90a8" }}>{l.duration}</span>
-            </div>
-          ))}
         </div>
       </div>
     );
   }
 
   function Settings() {
+    const [localName, setLocalName] = useState(profileName);
+    const [localRole, setLocalRole] = useState(profileRole);
+    const [saved, setSaved] = useState(false);
     const [on1, setOn1] = useState(true);
     const [on2, setOn2] = useState(true);
+
+    async function handleSaveProfile() {
+      await saveProfile(localName, localRole);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    }
+
     return (
       <div>
         <div style={S.pageTitle}>Settings</div>
@@ -495,10 +565,12 @@ export default function App() {
           <div style={{ fontSize: 11, fontWeight: 600, color: "#555b78", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 10 }}>Profile</div>
           <div style={S.card}>
             <label style={{ fontSize: 12, color: "#555b78", display: "block", marginBottom: 4 }}>Full Name</label>
-            <input style={S.formInput} value={profileName} onChange={e => setProfileName(e.target.value)} placeholder="Full name" />
+            <input style={S.formInput} value={localName} onChange={e => setLocalName(e.target.value)} placeholder="Your full name" />
             <label style={{ fontSize: 12, color: "#555b78", display: "block", marginBottom: 4 }}>Role</label>
-            <input style={S.formInput} value={profileRole} onChange={e => setProfileRole(e.target.value)} placeholder="e.g. Student · Footballer" />
-            <p style={{ fontSize: 12, color: "#27c98f", margin: 0 }}>Changes update instantly in the sidebar!</p>
+            <input style={S.formInput} value={localRole} onChange={e => setLocalRole(e.target.value)} placeholder="e.g. Student · Footballer" />
+            <button style={S.btnSm(false)} onClick={handleSaveProfile}>
+              {saved ? "✓ Saved!" : "Save Profile"}
+            </button>
           </div>
         </div>
         <div style={{ marginBottom: 20 }}>
@@ -558,7 +630,7 @@ export default function App() {
             <input style={S.searchInput} placeholder="Search anything..." />
           </div>
           <div style={S.actions}>
-            <button style={S.btnAdd} onClick={() => setModal({ open: true, tab: "task" })}>+ Quick Add</button>
+            <button style={S.btnAdd} onClick={() => { setModalTab("task"); setModalOpen(true); }}>+ Quick Add</button>
             <div style={S.btnIcon}>🔔</div>
             <div style={S.btnIcon} onClick={() => setPage("settings")}>👤</div>
           </div>
@@ -569,46 +641,7 @@ export default function App() {
             : <PageComponent />}
         </div>
       </div>
-
-      {modal.open && (
-        <div style={S.modalBackdrop} onClick={e => e.target === e.currentTarget && setModal({ open: false, tab: "task" })}>
-          <div style={S.modal}>
-            <div style={S.modalHeader}>
-              <h2 style={{ fontSize: 16, fontWeight: 600, margin: 0, fontFamily: "'Space Grotesk',sans-serif" }}>Quick Add</h2>
-              <button onClick={() => setModal({ open: false, tab: "task" })} style={{ background: "none", border: "none", color: "#555b78", fontSize: 20, cursor: "pointer" }}>✕</button>
-            </div>
-            <div style={S.modalTabs}>
-              {["task", "habit", "training", "schedule"].map(tab => (
-                <div key={tab} style={S.modalTab(modal.tab === tab)} onClick={() => setModal({ ...modal, tab })}>
-                  {tab.charAt(0).toUpperCase() + tab.slice(1)}
-                </div>
-              ))}
-            </div>
-            <div style={S.modalBody}>
-              {modal.tab === "task" && <>
-                <div style={S.modalField}><label style={{ fontSize: 12, color: "#555b78", display: "block", marginBottom: 5 }}>Title</label><input style={S.modalInput} value={mTitle} onChange={e => setMTitle(e.target.value)} placeholder="Task title" /></div>
-                <div style={S.modalField}><label style={{ fontSize: 12, color: "#555b78", display: "block", marginBottom: 5 }}>Subject</label><input style={S.modalInput} value={mSubject} onChange={e => setMSubject(e.target.value)} placeholder="Physics, Math..." /></div>
-                <div style={S.modalField}><label style={{ fontSize: 12, color: "#555b78", display: "block", marginBottom: 5 }}>Deadline</label><input style={S.modalInput} value={mDeadline} onChange={e => setMDeadline(e.target.value)} placeholder='Type "Today" or "16 May"' /></div>
-              </>}
-              {modal.tab === "habit" && <div style={S.modalField}><label style={{ fontSize: 12, color: "#555b78", display: "block", marginBottom: 5 }}>Habit Name</label><input style={S.modalInput} value={mHabit} onChange={e => setMHabit(e.target.value)} placeholder="e.g. Read 30 mins" /></div>}
-              {modal.tab === "training" && <>
-                <div style={S.modalField}><label style={{ fontSize: 12, color: "#555b78", display: "block", marginBottom: 5 }}>Type</label><select style={S.modalInput} value={mType} onChange={e => setMType(e.target.value)}><option>Football</option><option>Gym</option><option>Run</option><option>Other</option></select></div>
-                <div style={S.modalField}><label style={{ fontSize: 12, color: "#555b78", display: "block", marginBottom: 5 }}>Duration (mins)</label><input type="number" style={S.modalInput} value={mDur} onChange={e => setMDur(e.target.value)} placeholder="60" /></div>
-                <div style={S.modalField}><label style={{ fontSize: 12, color: "#555b78", display: "block", marginBottom: 5 }}>Intensity</label><select style={S.modalInput} value={mIntensity} onChange={e => setMIntensity(e.target.value)}><option>Low</option><option>Medium</option><option>High</option></select></div>
-                <div style={S.modalField}><label style={{ fontSize: 12, color: "#555b78", display: "block", marginBottom: 5 }}>Notes</label><textarea style={{ ...S.modalInput, minHeight: 60, resize: "none" }} value={mNotes} onChange={e => setMNotes(e.target.value)} placeholder="Session notes..." /></div>
-              </>}
-              {modal.tab === "schedule" && <>
-                <div style={S.modalField}><label style={{ fontSize: 12, color: "#555b78", display: "block", marginBottom: 5 }}>Time (e.g. 9:00)</label><input style={S.modalInput} value={mSchedTime} onChange={e => setMSchedTime(e.target.value)} placeholder="9:00" /></div>
-                <div style={S.modalField}><label style={{ fontSize: 12, color: "#555b78", display: "block", marginBottom: 5 }}>Event</label><input style={S.modalInput} value={mSchedLabel} onChange={e => setMSchedLabel(e.target.value)} placeholder="e.g. Football Training" /></div>
-              </>}
-            </div>
-            <div style={S.modalFooter}>
-              <button style={S.btnSm(true)} onClick={() => setModal({ open: false, tab: "task" })}>Cancel</button>
-              <button style={S.btnSm(false)} onClick={saveModal}>Save</button>
-            </div>
-          </div>
-        </div>
-      )}
+      {modalOpen && <QuickAddModal />}
     </div>
   );
 }
