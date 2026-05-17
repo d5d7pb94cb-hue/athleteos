@@ -63,6 +63,17 @@ const S = {
   formInput: { width: "100%", background: "#1c2030", border: "1px solid #252a3d", borderRadius: 8, padding: "8px 12px", color: "#e8eaf0", fontSize: 13, fontFamily: "inherit", outline: "none", marginBottom: 10, boxSizing: "border-box" },
   toggle: (on) => ({ width: 44, height: 24, borderRadius: 12, cursor: "pointer", position: "relative", background: on ? "#4f8ef7" : "#2e3450", flexShrink: 0 }),
   toggleKnob: (on) => ({ width: 18, height: 18, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: on ? 23 : 3, transition: "left .2s" }),
+  // Auth styles
+  authPage: { display: "flex", height: "100vh", alignItems: "center", justifyContent: "center", background: "#0d0f14", fontFamily: "'DM Sans', sans-serif" },
+  authBox: { background: "#151820", border: "1px solid #252a3d", borderRadius: 20, padding: 40, width: 400, maxWidth: "92vw" },
+  authTitle: { fontSize: 24, fontWeight: 700, color: "#e8eaf0", fontFamily: "'Space Grotesk', sans-serif", margin: "0 0 6px" },
+  authSub: { fontSize: 14, color: "#555b78", marginBottom: 28 },
+  authInput: { width: "100%", background: "#1c2030", border: "1px solid #252a3d", borderRadius: 8, padding: "10px 14px", color: "#e8eaf0", fontSize: 14, fontFamily: "inherit", outline: "none", marginBottom: 12, boxSizing: "border-box" },
+  authBtn: { width: "100%", background: "#4f8ef7", color: "#fff", border: "none", borderRadius: 10, padding: "11px 0", fontSize: 15, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", marginBottom: 12 },
+  authSwitch: { textAlign: "center", fontSize: 13, color: "#555b78" },
+  authLink: { color: "#4f8ef7", cursor: "pointer", fontWeight: 500 },
+  authError: { background: "rgba(232,93,93,.1)", border: "1px solid rgba(232,93,93,.3)", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#e85d5d", marginBottom: 14 },
+  authSuccess: { background: "rgba(39,201,143,.1)", border: "1px solid rgba(39,201,143,.3)", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#27c98f", marginBottom: 14 },
 };
 
 const DAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
@@ -70,18 +81,63 @@ const MONTHS = ["January","February","March","April","May","June","July","August
 const COLS = [{ key: "todo", label: "To Do" }, { key: "inprogress", label: "In Progress" }, { key: "done", label: "Done" }];
 const COLORS = ["#4f8ef7","#27c98f","#f5a623","#7c5cbf","#e85d5d"];
 
-// Isolated text input components to prevent re-render issues
 function TextInput({ value, onSave, placeholder, style, multiline }) {
   const [local, setLocal] = useState(value);
   useEffect(() => { setLocal(value); }, [value]);
-  if (multiline) {
-    return <textarea style={style} value={local} onChange={e => setLocal(e.target.value)} onBlur={() => onSave(local)} placeholder={placeholder} />;
-  }
+  if (multiline) return <textarea style={style} value={local} onChange={e => setLocal(e.target.value)} onBlur={() => onSave(local)} placeholder={placeholder} />;
   return <input style={style} value={local} onChange={e => setLocal(e.target.value)} onBlur={() => onSave(local)} onKeyDown={e => e.key === "Enter" && onSave(local)} placeholder={placeholder} />;
+}
+
+function AuthPage({ onAuth }) {
+  const [mode, setMode] = useState("login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function handleSubmit() {
+    setError(""); setSuccess(""); setLoading(true);
+    if (mode === "login") {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) setError(error.message);
+      else onAuth(data.user);
+    } else {
+      const { data, error } = await supabase.auth.signUp({ email, password });
+      if (error) setError(error.message);
+      else if (data.user && !data.user.confirmed_at) setSuccess("Account created! Check your email to confirm, then log in.");
+      else onAuth(data.user);
+    }
+    setLoading(false);
+  }
+
+  return (
+    <div style={S.authPage}>
+      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+      <div style={S.authBox}>
+        <div style={{ textAlign: "center", marginBottom: 24 }}>
+          <h1 style={{ ...S.authTitle, textAlign: "center" }}>Athlete<span style={{ color: "#4f8ef7" }}>OS</span></h1>
+          <p style={S.authSub}>{mode === "login" ? "Welcome back! Sign in to continue." : "Create your account to get started."}</p>
+        </div>
+        {error && <div style={S.authError}>{error}</div>}
+        {success && <div style={S.authSuccess}>{success}</div>}
+        <input style={S.authInput} type="email" placeholder="Email address" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSubmit()} />
+        <input style={S.authInput} type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSubmit()} />
+        <button style={S.authBtn} onClick={handleSubmit} disabled={loading}>
+          {loading ? "Please wait..." : mode === "login" ? "Sign In" : "Create Account"}
+        </button>
+        <div style={S.authSwitch}>
+          {mode === "login" ? <>Don't have an account? <span style={S.authLink} onClick={() => { setMode("signup"); setError(""); setSuccess(""); }}>Sign up</span></> : <>Already have an account? <span style={S.authLink} onClick={() => { setMode("login"); setError(""); setSuccess(""); }}>Sign in</span></>}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function App() {
   const d = new Date();
+  const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [page, setPage] = useState("dashboard");
   const [habits, setHabits] = useState([]);
   const [tasks, setTasks] = useState([]);
@@ -100,7 +156,21 @@ export default function App() {
   const [viewMode, setViewMode] = useState("kanban");
   const [drag, setDrag] = useState(null);
 
+  // Check auth on load
   useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      setAuthLoading(false);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // Load data when user logs in
+  useEffect(() => {
+    if (!user) return;
     async function loadData() {
       setLoading(true);
       const [{ data: h }, { data: t }, { data: tl }, { data: sc }, { data: n }, { data: pn }, { data: pr }] = await Promise.all([
@@ -122,37 +192,32 @@ export default function App() {
       setLoading(false);
     }
     loadData();
-  }, []);
+  }, [user]);
+
+  async function handleSignOut() {
+    await supabase.auth.signOut();
+    setUser(null);
+    setHabits([]); setTasks([]); setTrainingLogs([]); setSchedule([]);
+    setNotes(""); setNotesId(null); setPerfNotes(""); setPerfNotesId(null);
+    setProfileName("Your Name"); setProfileRole("Student · Athlete"); setProfileId(null);
+  }
 
   async function saveNotes(value) {
     setNotes(value);
-    if (notesId) {
-      await supabase.from("Notes").update({ content: value }).eq("id", notesId);
-    } else {
-      const { data } = await supabase.from("Notes").insert([{ content: value }]).select();
-      if (data && data[0]) setNotesId(data[0].id);
-    }
+    if (notesId) await supabase.from("Notes").update({ content: value }).eq("id", notesId);
+    else { const { data } = await supabase.from("Notes").insert([{ content: value }]).select(); if (data?.[0]) setNotesId(data[0].id); }
   }
 
   async function savePerfNotes(value) {
     setPerfNotes(value);
-    if (perfNotesId) {
-      await supabase.from("performance_notes").update({ content: value }).eq("id", perfNotesId);
-    } else {
-      const { data } = await supabase.from("performance_notes").insert([{ content: value }]).select();
-      if (data && data[0]) setPerfNotesId(data[0].id);
-    }
+    if (perfNotesId) await supabase.from("performance_notes").update({ content: value }).eq("id", perfNotesId);
+    else { const { data } = await supabase.from("performance_notes").insert([{ content: value }]).select(); if (data?.[0]) setPerfNotesId(data[0].id); }
   }
 
   async function saveProfile(name, role) {
-    setProfileName(name);
-    setProfileRole(role);
-    if (profileId) {
-      await supabase.from("profile").update({ name, role }).eq("id", profileId);
-    } else {
-      const { data } = await supabase.from("profile").insert([{ name, role }]).select();
-      if (data && data[0]) setProfileId(data[0].id);
-    }
+    setProfileName(name); setProfileRole(role);
+    if (profileId) await supabase.from("profile").update({ name, role }).eq("id", profileId);
+    else { const { data } = await supabase.from("profile").insert([{ name, role }]).select(); if (data?.[0]) setProfileId(data[0].id); }
   }
 
   async function addHabit(name) {
@@ -225,7 +290,6 @@ export default function App() {
     ["settings", "⚙️", "Settings"],
   ];
 
-  // Modal form - completely isolated
   function QuickAddModal() {
     const [tab, setTab] = useState(modalTab);
     const [title, setTitle] = useState("");
@@ -267,7 +331,6 @@ export default function App() {
               <div style={S.modalField}><label style={{ fontSize: 12, color: "#555b78", display: "block", marginBottom: 5 }}>Title</label><input style={S.modalInput} value={title} onChange={e => setTitle(e.target.value)} placeholder="Task title" /></div>
               <div style={S.modalField}><label style={{ fontSize: 12, color: "#555b78", display: "block", marginBottom: 5 }}>Subject</label><input style={S.modalInput} value={subject} onChange={e => setSubject(e.target.value)} placeholder="Physics, Math..." /></div>
               <div style={S.modalField}><label style={{ fontSize: 12, color: "#555b78", display: "block", marginBottom: 5 }}>Deadline</label><input style={S.modalInput} value={deadline} onChange={e => setDeadline(e.target.value)} placeholder='Type "Today" or "16 May"' /></div>
-              <div style={S.modalField}><label style={{ fontSize: 12, color: "#555b78", display: "block", marginBottom: 5 }}>Notes</label><input style={S.modalInput} value={taskNotes} onChange={e => setTaskNotes(e.target.value)} placeholder="Optional notes" /></div>
             </>}
             {tab === "habit" && <div style={S.modalField}><label style={{ fontSize: 12, color: "#555b78", display: "block", marginBottom: 5 }}>Habit Name</label><input style={S.modalInput} value={habit} onChange={e => setHabit(e.target.value)} placeholder="e.g. Read 30 mins" /></div>}
             {tab === "training" && <>
@@ -310,7 +373,6 @@ export default function App() {
               </div>
             ))}
           </div>
-
           <div style={S.card}>
             <div style={S.cardTitle}>Tasks · Today</div>
             {todayTasks.length === 0 && <p style={{ fontSize: 13, color: "#555b78" }}>No tasks for today. Add one!</p>}
@@ -327,13 +389,12 @@ export default function App() {
               </div>
             ))}
           </div>
-
           <div style={S.card}>
             <div style={S.cardTitle}>Habits · Today</div>
             {habits.length === 0 && <p style={{ fontSize: 13, color: "#555b78" }}>No habits yet. Add one!</p>}
             {habits.map((h, i) => (
               <div key={h.id} style={{ ...S.habitItem, ...(i === habits.length - 1 ? { borderBottom: "none" } : {}) }}>
-                <div style={S.habitToggle(h.Done)} onClick={() => toggleHabit(h.id, h.done)}>
+                <div style={S.habitToggle(h.Done)} onClick={() => toggleHabit(h.id, h.Done)}>
                   {h.Done && <span style={{ fontSize: 12, color: "#fff" }}>✓</span>}
                 </div>
                 <span style={{ fontSize: 14, flex: 1, textDecoration: h.Done ? "line-through" : "none", color: h.Done ? "#555b78" : "#e8eaf0" }}>{h.name}</span>
@@ -341,7 +402,6 @@ export default function App() {
               </div>
             ))}
           </div>
-
           <div style={S.card}>
             <div style={S.cardTitle}>Training · Today</div>
             {todayTraining ? <>
@@ -351,7 +411,6 @@ export default function App() {
               <div style={{ ...S.trainingRow, borderBottom: "none" }}><span>Note</span><span style={{ color: "#e8eaf0", fontSize: 12 }}>{todayTraining.note}</span></div>
             </> : <p style={{ fontSize: 13, color: "#555b78" }}>No training today. Use Quick Add!</p>}
           </div>
-
           <div style={{ ...S.card, gridColumn: "1/-1" }}>
             <div style={S.cardTitle}>Notes & Reminders</div>
             <TextInput multiline value={notes} onSave={saveNotes} placeholder="Jot down reminders, thoughts..." style={S.textarea} />
@@ -378,13 +437,7 @@ export default function App() {
               </div>
             ))}
             <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-              <input
-                value={newHabitText}
-                onChange={e => setNewHabitText(e.target.value)}
-                placeholder="New habit name..."
-                style={{ ...S.formInput, marginBottom: 0, flex: 1 }}
-                onKeyDown={e => { if (e.key === "Enter" && newHabitText.trim()) { addHabit(newHabitText); setNewHabitText(""); } }}
-              />
+              <input value={newHabitText} onChange={e => setNewHabitText(e.target.value)} placeholder="New habit name..." style={{ ...S.formInput, marginBottom: 0, flex: 1 }} onKeyDown={e => { if (e.key === "Enter" && newHabitText.trim()) { addHabit(newHabitText); setNewHabitText(""); } }} />
               <button style={S.btnSm(false)} onClick={() => { if (newHabitText.trim()) { addHabit(newHabitText); setNewHabitText(""); } }}>Add</button>
             </div>
           </div>
@@ -392,7 +445,7 @@ export default function App() {
             <div style={S.cardTitle}>Habit Status Today</div>
             {habits.map(h => (
               <div key={h.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: "1px solid #252a3d", fontSize: 13 }}>
-                <div style={S.habitToggle(h.Done)} onClick={() => toggleHabit(h.id, h.done)}>
+                <div style={S.habitToggle(h.Done)} onClick={() => toggleHabit(h.id, h.Done)}>
                   {h.Done && <span style={{ fontSize: 12, color: "#fff" }}>✓</span>}
                 </div>
                 <span style={{ flex: 1 }}>{h.name}</span>
@@ -568,9 +621,14 @@ export default function App() {
             <input style={S.formInput} value={localName} onChange={e => setLocalName(e.target.value)} placeholder="Your full name" />
             <label style={{ fontSize: 12, color: "#555b78", display: "block", marginBottom: 4 }}>Role</label>
             <input style={S.formInput} value={localRole} onChange={e => setLocalRole(e.target.value)} placeholder="e.g. Student · Footballer" />
-            <button style={S.btnSm(false)} onClick={handleSaveProfile}>
-              {saved ? "✓ Saved!" : "Save Profile"}
-            </button>
+            <button style={S.btnSm(false)} onClick={handleSaveProfile}>{saved ? "✓ Saved!" : "Save Profile"}</button>
+          </div>
+        </div>
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: "#555b78", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 10 }}>Account</div>
+          <div style={S.card}>
+            <p style={{ fontSize: 13, color: "#8b90a8", margin: "0 0 12px" }}>Signed in as <strong style={{ color: "#e8eaf0" }}>{user?.email}</strong></p>
+            <button style={{ ...S.btnSm(true), color: "#e85d5d", border: "1px solid rgba(232,93,93,.3)" }} onClick={handleSignOut}>Sign Out</button>
           </div>
         </div>
         <div style={{ marginBottom: 20 }}>
@@ -601,6 +659,9 @@ export default function App() {
 
   const pages = { dashboard: Dashboard, habits: Habits, tasks: Tasks, athlete: Athlete, review: Review, settings: Settings };
   const PageComponent = pages[page];
+
+  if (authLoading) return <div style={{ ...S.authPage, fontSize: 14, color: "#555b78" }}>Loading...</div>;
+  if (!user) return <AuthPage onAuth={setUser} />;
 
   return (
     <div style={S.app}>
@@ -636,9 +697,7 @@ export default function App() {
           </div>
         </div>
         <div style={S.page}>
-          {loading
-            ? <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", fontSize: 14, color: "#555b78" }}>Loading your data...</div>
-            : <PageComponent />}
+          {loading ? <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", fontSize: 14, color: "#555b78" }}>Loading your data...</div> : <PageComponent />}
         </div>
       </div>
       {modalOpen && <QuickAddModal />}
