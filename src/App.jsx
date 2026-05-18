@@ -63,7 +63,6 @@ const S = {
   formInput: { width: "100%", background: "#1c2030", border: "1px solid #252a3d", borderRadius: 8, padding: "8px 12px", color: "#e8eaf0", fontSize: 13, fontFamily: "inherit", outline: "none", marginBottom: 10, boxSizing: "border-box" },
   toggle: (on) => ({ width: 44, height: 24, borderRadius: 12, cursor: "pointer", position: "relative", background: on ? "#4f8ef7" : "#2e3450", flexShrink: 0 }),
   toggleKnob: (on) => ({ width: 18, height: 18, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: on ? 23 : 3, transition: "left .2s" }),
-  // Auth styles
   authPage: { display: "flex", height: "100vh", alignItems: "center", justifyContent: "center", background: "#0d0f14", fontFamily: "'DM Sans', sans-serif" },
   authBox: { background: "#151820", border: "1px solid #252a3d", borderRadius: 20, padding: 40, width: 400, maxWidth: "92vw" },
   authTitle: { fontSize: 24, fontWeight: 700, color: "#e8eaf0", fontFamily: "'Space Grotesk', sans-serif", margin: "0 0 6px" },
@@ -156,7 +155,6 @@ export default function App() {
   const [viewMode, setViewMode] = useState("kanban");
   const [drag, setDrag] = useState(null);
 
-  // Check auth on load
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
@@ -168,19 +166,19 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Load data when user logs in
   useEffect(() => {
     if (!user) return;
     async function loadData() {
       setLoading(true);
+      const uid = user.id;
       const [{ data: h }, { data: t }, { data: tl }, { data: sc }, { data: n }, { data: pn }, { data: pr }] = await Promise.all([
-        supabase.from("habits").select("*").order("created_at"),
-        supabase.from("tasks").select("*").order("created_at"),
-        supabase.from("training_logs").select("*").order("created_at", { ascending: false }),
-        supabase.from("schedule").select("*").order("time"),
-        supabase.from("Notes").select("*").limit(1),
-        supabase.from("performance_notes").select("*").limit(1),
-        supabase.from("profile").select("*").limit(1),
+        supabase.from("habits").select("*").eq("user_id", uid).order("created_at"),
+        supabase.from("tasks").select("*").eq("user_id", uid).order("created_at"),
+        supabase.from("training_logs").select("*").eq("user_id", uid).order("created_at", { ascending: false }),
+        supabase.from("schedule").select("*").eq("user_id", uid).order("time"),
+        supabase.from("Notes").select("*").eq("user_id", uid).limit(1),
+        supabase.from("performance_notes").select("*").eq("user_id", uid).limit(1),
+        supabase.from("profile").select("*").eq("user_id", uid).limit(1),
       ]);
       if (h) setHabits(h);
       if (t) setTasks(t);
@@ -205,25 +203,25 @@ export default function App() {
   async function saveNotes(value) {
     setNotes(value);
     if (notesId) await supabase.from("Notes").update({ content: value }).eq("id", notesId);
-    else { const { data } = await supabase.from("Notes").insert([{ content: value }]).select(); if (data?.[0]) setNotesId(data[0].id); }
+    else { const { data } = await supabase.from("Notes").insert([{ content: value, user_id: user.id }]).select(); if (data?.[0]) setNotesId(data[0].id); }
   }
 
   async function savePerfNotes(value) {
     setPerfNotes(value);
     if (perfNotesId) await supabase.from("performance_notes").update({ content: value }).eq("id", perfNotesId);
-    else { const { data } = await supabase.from("performance_notes").insert([{ content: value }]).select(); if (data?.[0]) setPerfNotesId(data[0].id); }
+    else { const { data } = await supabase.from("performance_notes").insert([{ content: value, user_id: user.id }]).select(); if (data?.[0]) setPerfNotesId(data[0].id); }
   }
 
   async function saveProfile(name, role) {
     setProfileName(name); setProfileRole(role);
     if (profileId) await supabase.from("profile").update({ name, role }).eq("id", profileId);
-    else { const { data } = await supabase.from("profile").insert([{ name, role }]).select(); if (data?.[0]) setProfileId(data[0].id); }
+    else { const { data } = await supabase.from("profile").insert([{ name, role, user_id: user.id }]).select(); if (data?.[0]) setProfileId(data[0].id); }
   }
 
   async function addHabit(name) {
     if (!name.trim()) return;
     const color = COLORS[habits.length % COLORS.length];
-    const { data } = await supabase.from("habits").insert([{ name: name.trim(), color, Done: false }]).select();
+    const { data } = await supabase.from("habits").insert([{ name: name.trim(), color, Done: false, user_id: user.id }]).select();
     if (data) setHabits(prev => [...prev, data[0]]);
   }
 
@@ -238,9 +236,9 @@ export default function App() {
     setHabits(prev => prev.map(h => h.id === id ? { ...h, Done: done } : h));
   }
 
-  async function addTask(title, subject, deadline, notes) {
+  async function addTask(title, subject, deadline, notes, urgent = false) {
     if (!title.trim()) return;
-    const { data } = await supabase.from("tasks").insert([{ title: title.trim(), subject, deadline: deadline || "TBD", notes, status: "todo", urgent: false }]).select();
+    const { data } = await supabase.from("tasks").insert([{ title: title.trim(), subject, deadline: deadline || "TBD", notes, status: "todo", urgent: urgent, user_id: user.id }]).select();
     if (data) setTasks(prev => [...prev, data[0]]);
   }
 
@@ -256,7 +254,7 @@ export default function App() {
 
   async function addTraining(type, duration, intensity, note) {
     const date = d.getDate() + " " + MONTHS[d.getMonth()].slice(0, 3);
-    const { data } = await supabase.from("training_logs").insert([{ type, duration: duration + " min", intensity, note, date }]).select();
+    const { data } = await supabase.from("training_logs").insert([{ type, duration: duration + " min", intensity, note, date, user_id: user.id }]).select();
     if (data) setTrainingLogs(prev => [data[0], ...prev]);
   }
 
@@ -267,7 +265,7 @@ export default function App() {
 
   async function addSchedule(time, label) {
     if (!time.trim() || !label.trim()) return;
-    const { data } = await supabase.from("schedule").insert([{ time, label }]).select();
+    const { data } = await supabase.from("schedule").insert([{ time, label, user_id: user.id }]).select();
     if (data) setSchedule(prev => [...prev, data[0]].sort((a, b) => a.time.localeCompare(b.time)));
   }
 
@@ -277,7 +275,9 @@ export default function App() {
   }
 
   const todayStr = d.getDate() + " " + MONTHS[d.getMonth()].slice(0, 3);
-  const todayTasks = tasks.filter(t => t.deadline === "Today" || t.deadline === "today" || t.deadline === todayStr);
+  const todayTasks = tasks.filter(t => String(t.deadline).trim() === "Today" || String(t.deadline).trim() === "today" || String(t.deadline).trim() === todayStr);
+  console.log("All tasks:", tasks.map(t => ({title:t.title, deadline:t.deadline, urgent:t.urgent})));
+  console.log("Today tasks:", todayTasks.length);
   const todayTraining = trainingLogs[0];
   const initials = profileName.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
 
@@ -296,6 +296,7 @@ export default function App() {
     const [subject, setSubject] = useState("");
     const [deadline, setDeadline] = useState("");
     const [taskNotes, setTaskNotes] = useState("");
+    const [urgent, setUrgent] = useState(false);
     const [habit, setHabit] = useState("");
     const [type, setType] = useState("Football");
     const [dur, setDur] = useState("");
@@ -305,7 +306,7 @@ export default function App() {
     const [schedLabel, setSchedLabel] = useState("");
 
     async function handleSave() {
-      if (tab === "task") await addTask(title, subject, deadline, taskNotes);
+      if (tab === "task") await addTask(title, subject, deadline, taskNotes, urgent);
       else if (tab === "habit") await addHabit(habit);
       else if (tab === "training") await addTraining(type, dur, intensity, trainNotes);
       else if (tab === "schedule") await addSchedule(schedTime, schedLabel);
@@ -331,6 +332,7 @@ export default function App() {
               <div style={S.modalField}><label style={{ fontSize: 12, color: "#555b78", display: "block", marginBottom: 5 }}>Title</label><input style={S.modalInput} value={title} onChange={e => setTitle(e.target.value)} placeholder="Task title" /></div>
               <div style={S.modalField}><label style={{ fontSize: 12, color: "#555b78", display: "block", marginBottom: 5 }}>Subject</label><input style={S.modalInput} value={subject} onChange={e => setSubject(e.target.value)} placeholder="Physics, Math..." /></div>
               <div style={S.modalField}><label style={{ fontSize: 12, color: "#555b78", display: "block", marginBottom: 5 }}>Deadline</label><input style={S.modalInput} value={deadline} onChange={e => setDeadline(e.target.value)} placeholder='Type "Today" or "16 May"' /></div>
+              <div style={S.modalField}><label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13, color: "#e8eaf0" }}><input type="checkbox" checked={urgent} onChange={e => setUrgent(e.target.checked)} />Mark as Urgent</label></div>
             </>}
             {tab === "habit" && <div style={S.modalField}><label style={{ fontSize: 12, color: "#555b78", display: "block", marginBottom: 5 }}>Habit Name</label><input style={S.modalInput} value={habit} onChange={e => setHabit(e.target.value)} placeholder="e.g. Read 30 mins" /></div>}
             {tab === "training" && <>
@@ -383,7 +385,7 @@ export default function App() {
                 </div>
                 <div style={{ flex: 1 }}>
                   <p style={{ fontSize: 14, margin: 0, textDecoration: t.status === "done" ? "line-through" : "none", color: t.status === "done" ? "#555b78" : "#e8eaf0" }}>{t.title}</p>
-                  {t.urgent && <span style={S.tag("urgent")}>Urgent</span>}
+                  {(t.urgent === true || t.urgent === "true") && <span style={S.tag("urgent")}>Urgent</span>}
                 </div>
                 <button onClick={() => deleteTask(t.id)} style={{ background: "none", border: "none", color: "#555b78", cursor: "pointer", fontSize: 14 }}>🗑</button>
               </div>
